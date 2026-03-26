@@ -1,14 +1,5 @@
-mod cli;
-mod config;
-mod filter;
-mod audit;
-mod otel;
-mod shell;
-mod repl;
-mod error;
-
 use anyhow::Result;
-use cli::InvocationMode;
+use leash::cli::{self, InvocationMode};
 
 fn main() -> Result<()> {
     tracing_subscriber::fmt()
