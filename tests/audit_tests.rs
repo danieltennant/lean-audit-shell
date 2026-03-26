@@ -221,3 +221,148 @@ fn command_ids_are_unique_per_command() {
 
     assert_ne!(id1, id2);
 }
+
+// ── Gap 1: Attribution fields present and non-empty ──────────────────────────
+
+#[test]
+fn request_record_has_non_empty_attribution_fields() {
+    let dir = TempDir::new().unwrap();
+    let logger = logger_in_tempdir(&dir);
+    logger.write_request("ls", "/", &FilterResult::Allow);
+
+    let records = read_log(&dir);
+    let r = &records[0];
+
+    let username = r["username"].as_str().unwrap_or("");
+    let hostname = r["hostname"].as_str().unwrap_or("");
+    let shell_version = r["shell_version"].as_str().unwrap_or("");
+    let timestamp = r["timestamp"].as_str().unwrap_or("");
+
+    assert!(!username.is_empty(), "username must be non-empty");
+    assert!(!hostname.is_empty(), "hostname must be non-empty");
+    assert!(!shell_version.is_empty(), "shell_version must be non-empty");
+    assert!(!timestamp.is_empty(), "timestamp must be non-empty");
+}
+
+#[test]
+fn request_record_timestamp_is_rfc3339() {
+    let dir = TempDir::new().unwrap();
+    let logger = logger_in_tempdir(&dir);
+    logger.write_request("ls", "/", &FilterResult::Allow);
+
+    let records = read_log(&dir);
+    let ts = records[0]["timestamp"].as_str().unwrap();
+
+    chrono::DateTime::parse_from_rfc3339(ts)
+        .unwrap_or_else(|e| panic!("timestamp {ts:?} is not valid RFC3339: {e}"));
+}
+
+#[test]
+fn result_record_timestamp_is_rfc3339() {
+    let dir = TempDir::new().unwrap();
+    let logger = logger_in_tempdir(&dir);
+    let id = logger.write_request("ls", "/", &FilterResult::Allow);
+    logger.write_result(&id, 0, 10);
+
+    let records = read_log(&dir);
+    let ts = records[1]["timestamp"].as_str().unwrap();
+
+    chrono::DateTime::parse_from_rfc3339(ts)
+        .unwrap_or_else(|e| panic!("timestamp {ts:?} is not valid RFC3339: {e}"));
+}
+
+#[test]
+fn shell_version_matches_cargo_pkg_version() {
+    let dir = TempDir::new().unwrap();
+    let logger = logger_in_tempdir(&dir);
+    logger.write_request("ls", "/", &FilterResult::Allow);
+
+    let records = read_log(&dir);
+    assert_eq!(records[0]["shell_version"], env!("CARGO_PKG_VERSION"));
+}
+
+// ── Gap 2: Append semantics across logger instances ───────────────────────────
+
+#[test]
+fn second_logger_appends_not_overwrites() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("audit.log");
+
+    // First logger writes one record
+    {
+        let logger = AuditLogger::open(&path).unwrap();
+        logger.write_request("first-cmd", "/", &FilterResult::Allow);
+    }
+
+    // Second logger opens same file and writes another record
+    {
+        let logger = AuditLogger::open(&path).unwrap();
+        logger.write_request("second-cmd", "/", &FilterResult::Allow);
+    }
+
+    let content = fs::read_to_string(&path).unwrap();
+    let lines: Vec<&str> = content.lines().collect();
+
+    assert_eq!(lines.len(), 2, "second open should append, not overwrite");
+
+    let first: serde_json::Value = serde_json::from_str(lines[0]).unwrap();
+    let second: serde_json::Value = serde_json::from_str(lines[1]).unwrap();
+
+    assert_eq!(first["command"], "first-cmd");
+    assert_eq!(second["command"], "second-cmd");
+}
+
+// ── Gap 3: NullAuditLogger and Auditor dispatch ───────────────────────────────
+
+#[test]
+fn null_audit_logger_returns_valid_command_id() {
+    use leash::audit::NullAuditLogger;
+    let null = NullAuditLogger;
+    let id = null.write_request("cmd", "/", &FilterResult::Allow);
+    assert!(!id.is_empty());
+}
+
+#[test]
+fn null_audit_logger_write_result_does_not_panic() {
+    use leash::audit::NullAuditLogger;
+    let null = NullAuditLogger;
+    let id = null.write_request("cmd", "/", &FilterResult::Allow);
+    // must not panic
+    null.write_result(&id, 0, 100);
+}
+
+#[test]
+fn auditor_active_writes_to_file() {
+    use leash::audit::Auditor;
+    use leash::config::Config;
+
+    let dir = TempDir::new().unwrap();
+    let mut config = Config::default();
+    config.audit.local.enabled = true;
+    config.audit.local.log_path = Some(dir.path().join("audit.log"));
+
+    let auditor = Auditor::from_config(&config);
+    let id = auditor.write_request("ls", "/", &FilterResult::Allow);
+    auditor.write_result(&id, 0, 50);
+
+    let records = read_log(&dir);
+    assert_eq!(records.len(), 2);
+}
+
+#[test]
+fn auditor_null_when_local_disabled() {
+    use leash::audit::Auditor;
+    use leash::config::Config;
+
+    let dir = TempDir::new().unwrap();
+    let mut config = Config::default();
+    config.audit.local.enabled = false;
+    config.audit.local.log_path = Some(dir.path().join("audit.log"));
+
+    let auditor = Auditor::from_config(&config);
+    let id = auditor.write_request("ls", "/", &FilterResult::Allow);
+    auditor.write_result(&id, 0, 50);
+
+    // File should not have been created
+    assert!(!dir.path().join("audit.log").exists());
+}
