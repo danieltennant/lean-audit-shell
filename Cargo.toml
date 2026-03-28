@@ -19,9 +19,10 @@ otel = ["dep:tokio", "dep:opentelemetry", "dep:opentelemetry_sdk", "dep:opentele
 # Shell / PTY
 # TODO Phase 5: replace with git dep on wezterm-pty for correct ConPTY flags
 portable-pty = "0.8"
-rustyline   = "17"
-ctrlc       = "3"
-which       = "6"
+rustyline    = "17"
+ctrlc        = "3"
+which        = "6"
+crossterm    = "0.28"
 
 # Serialization
 serde      = { version = "1", features = ["derive"] }
