@@ -20,9 +20,16 @@ fn main() -> Result<()> {
             println!("leash {}", env!("CARGO_PKG_VERSION"));
         }
 
-        InvocationMode::Interactive | InvocationMode::Login => {
+        InvocationMode::Interactive => {
             let config = Config::load()?;
-            let backend = Arc::new(ZshBackend::default());
+            let backend = Arc::new(ZshBackend::new(false));
+            let repl = Repl::new(&config, backend);
+            repl.run_interactive()?;
+        }
+
+        InvocationMode::Login => {
+            let config = Config::load()?;
+            let backend = Arc::new(ZshBackend::new(true));
             let repl = Repl::new(&config, backend);
             repl.run_interactive()?;
         }

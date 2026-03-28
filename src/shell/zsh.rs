@@ -9,17 +9,28 @@ use which::which;
 
 /// Shell backend for macOS using zsh and a local PTY via `portable-pty`.
 ///
-/// Spawns `zsh -c "<command>"` inside a PTY, then forwards I/O between the
-/// host terminal and the PTY master. Restores terminal state on exit, even
-/// if the command panics or returns an error.
+/// Spawns `zsh [-l] -c "<command>"` inside a PTY, then forwards I/O between
+/// the host terminal and the PTY master. Restores terminal state on exit,
+/// even if the command panics or returns an error.
+///
+/// When `login_shell` is `true` the `-l` flag is passed to zsh so that login
+/// profiles (`~/.zprofile`, `/etc/zprofile`) are sourced before the command
+/// runs — matching the semantics of `leash -l`.
 pub struct ZshBackend {
-    shell: std::path::PathBuf,
+    shell:       std::path::PathBuf,
+    login_shell: bool,
 }
 
 impl Default for ZshBackend {
     fn default() -> Self {
+        Self::new(false)
+    }
+}
+
+impl ZshBackend {
+    pub fn new(login_shell: bool) -> Self {
         let shell = which("zsh").unwrap_or_else(|_| std::path::PathBuf::from("/bin/zsh"));
-        Self { shell }
+        Self { shell, login_shell }
     }
 }
 
@@ -50,6 +61,9 @@ impl ShellBackend for ZshBackend {
             .context("failed to open PTY")?;
 
         let mut cmd = CommandBuilder::new(&self.shell);
+        if self.login_shell {
+            cmd.arg("-l");
+        }
         cmd.args(["-c", command]);
         cmd.cwd(working_dir);
 

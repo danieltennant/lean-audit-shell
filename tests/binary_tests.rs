@@ -74,6 +74,17 @@ fn c_mode_stdout_reaches_caller() {
     assert!(stdout.contains("hello_leash"), "stdout: {stdout}");
 }
 
+// ── leash -c "date" — Phase 7 acceptance criterion AC-08 ─────────────────────
+
+#[test]
+fn c_mode_date_exits_zero_and_produces_output() {
+    let out = run_c("date");
+    assert_eq!(out.status.code(), Some(0), "date should exit 0");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    // date always produces non-empty output
+    assert!(!stdout.trim().is_empty(), "date should produce output");
+}
+
 // ── unrecognised arguments ────────────────────────────────────────────────────
 
 #[test]
